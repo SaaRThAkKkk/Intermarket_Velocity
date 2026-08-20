@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Brent / Cl Spread — Velocity Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --co:      #185FA5;
+  --cl:      #BA7517;
+  --long:    #1D9E75;
+  --short:   #E24B4A;
+  --neutral: #888780;
+  --bg:      #111827;
+  --surface: #1a1f35;
+  --surface2:#111827;
+  --border:  rgba(255,255,255,0.08);
+  --text:    #e2e8f0;
+  --muted:   #64748b;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:'Consolas','Monaco',monospace; background:var(--bg); color:var(--text); font-size:13px; }
+
+/* ── Status bar ── */
+#status-bar {
+  display:flex; align-items:center; gap:14px;
+  padding:5px 14px; background:#0d1117;
+  border-bottom:1px solid var(--border); font-size:11px; color:var(--muted);
+}
+#ws-dot { width:8px; height:8px; border-radius:50%; background:var(--neutral); flex-shrink:0; }
+#ws-dot.connected  { background:var(--long); }
+#ws-dot.connecting { background:#f0c040; animation:blink 1s infinite; }
+#ws-dot.error      { background:var(--short); }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+.btn {
+  padding:3px 10px; border:1px solid var(--border); border-radius:4px;
+  background:rgba(255,255,255,0.05); color:var(--text); cursor:pointer;
+  font-size:11px; font-family:inherit;
+}
+.btn:hover  { background:rgba(255,255,255,0.1); }
+.btn.active { background:var(--co); border-color:var(--co); color:#fff; }
+.btn.warn   { border-color:var(--short); color:var(--short); }
+.btn.warn:hover { background:rgba(226,75,74,.1); }
+
+select {
+  background:rgba(255,255,255,0.07); border:1px solid var(--border);
+  color:var(--text); font-size:11px; padding:2px 6px; border-radius:3px;
+  font-family:inherit;
+}
+
+/* ── Grid ── */
+.grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; padding:8px; }
+.panel { background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:14px; }
+.ptitle { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin-bottom:10px; }
+
+/* ── Panel 1 ── */
+#p-leading { grid-column:1/-1; }
+.leader-name { font-size:30px; font-weight:700; line-height:1; }
+.leader-name.co      { color:var(--co); }
+.leader-name.cl      { color:var(--cl); }
+.leader-name.neutral { color:var(--neutral); }
+.win-rate { font-size:20px; font-weight:600; margin-top:4px; }
+.win-rate.strong { color:var(--long); }
+.win-rate.medium { color:#f0c040; }
+.win-rate.mild   { color:var(--neutral); }
+.count-line { font-size:11px; color:var(--muted); margin-top:5px; margin-bottom:10px; }
+.pip-strip  { display:flex; gap:3px; flex-wrap:wrap; margin-bottom:8px; }
+.pip { width:18px; height:18px; border-radius:3px; background:rgba(255,255,255,0.07); }
+.pip.co  { background:var(--co); }
+.pip.cl  { background:var(--cl); }
+.pip.tie { background:var(--neutral); }
+.tow { height:8px; border-radius:4px; background:rgba(255,255,255,0.07); overflow:hidden; display:flex; margin-bottom:6px; }
+.tow-co { background:var(--co); transition:width .4s; }
+.tow-cl { background:var(--cl); transition:width .4s; }
+
+/* ── Panel 2 ── */
+.score-row { display:flex; align-items:flex-end; gap:12px; margin-bottom:10px; }
+.score-block { flex:1; text-align:center; }
+.score-num { font-size:44px; font-weight:700; line-height:1; }
+.score-num.co { color:var(--co); }
+.score-num.cl { color:var(--cl); }
+.score-lbl { font-size:11px; color:var(--muted); margin-top:2px; }
+.score-bd  { font-size:11px; margin-top:3px; display:flex; justify-content:center; gap:10px; }
+.lc { color:var(--long); } .sc { color:var(--short); }
+.vs { font-size:18px; color:var(--muted); padding-bottom:10px; }
+.streak-row { display:flex; align-items:center; gap:4px; margin-top:8px; }
+.streak-pip { width:13px; height:13px; border-radius:2px; background:rgba(255,255,255,0.07); }
+.streak-pip.co  { background:var(--co); }
+.streak-pip.cl  { background:var(--cl); }
+.streak-pip.tie { background:var(--neutral); }
+.streak-txt { font-size:11px; color:var(--muted); margin-left:4px; }
+
+/* ── Panel 3 ── */
+.verdict {
+  font-size:14px; font-weight:600;
+  padding:9px 12px; border-radius:6px;
+  border-left:4px solid var(--neutral);
+  background:rgba(136,135,128,.08);
+  margin-bottom:8px;
+}
+.verdict.co      { border-color:var(--co);  background:rgba(24,95,165,.12); color:#6ab0ff; }
+.verdict.co-mild { border-color:var(--co);  background:rgba(24,95,165,.07); color:#8fc0e0; }
+.verdict.cl      { border-color:var(--cl);  background:rgba(186,117,23,.12); color:#ffc97a; }
+.verdict.cl-mild { border-color:var(--cl);  background:rgba(186,117,23,.07); color:#d0a060; }
+.verdict.neutral { border-color:var(--neutral); }
+.sent-detail { font-size:11px; color:var(--muted); margin-bottom:10px; }
+
+/* ── Panel 4 ── */
+#p-legs { grid-column:1/-1; }
+.legs-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.leg-card { background:var(--surface2); border:1px solid var(--border); border-radius:6px; padding:12px; }
+.leg-card.co { border-top:3px solid var(--co); }
+.leg-card.cl { border-top:3px solid var(--cl); }
+.leg-name { font-size:10px; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
+.leg-id   { font-size:9px; color:var(--muted); opacity:.5; margin-top:1px; }
+.leg-ltp  { font-size:26px; font-weight:700; margin:4px 0; transition:color .3s; }
+.leg-ltp.co { color:var(--co); }
+.leg-ltp.cl { color:var(--cl); }
+.leg-ltp.up { color:var(--long) !important; }
+.leg-ltp.dn { color:var(--short) !important; }
+.tick-row { display:flex; gap:4px; margin:5px 0; }
+.t-pip { width:14px; height:14px; border-radius:2px; background:rgba(255,255,255,0.06); font-size:9px; display:flex; align-items:center; justify-content:center; }
+.t-pip.up { background:rgba(29,158,117,.25); color:var(--long); }
+.t-pip.dn { background:rgba(226,75,74,.25);  color:var(--short); }
+.vel-table { font-size:11px; margin-top:6px; display:grid; grid-template-columns:auto 1fr; gap:2px 8px; }
+.vel-k { color:var(--muted); }
+.vel-v { font-weight:600; }
+.vel-v.fast { color:var(--long); }
+.vel-v.slow { color:#f0c040; }
+.vel-v.none { color:var(--muted); }
+
+/* ── Panel 5 ── */
+#chart-wrap { position:relative; height:160px; }
+
+/* ── Panel 6 ── */
+.ev-row { display:flex; align-items:center; gap:7px; padding:4px 0; border-bottom:1px solid rgba(255,255,255,.04); font-size:11px; }
+.ev-badge { font-size:10px; font-weight:700; padding:2px 6px; border-radius:3px; white-space:nowrap; min-width:66px; text-align:center; }
+.ev-badge.brent-long  { background:rgba(24,95,165,.3);  color:#6ab0ff; }
+.ev-badge.brent-short { background:rgba(24,95,165,.2);  color:#4a8fbe; }
+.ev-badge.cl-long     { background:rgba(186,117,23,.3); color:#ffc97a; }
+.ev-badge.cl-short    { background:rgba(186,117,23,.2); color:#b87a30; }
+.ev-ts  { color:var(--muted); min-width:54px; }
+.ev-dur { color:var(--muted); min-width:50px; }
+.ev-vel { color:var(--muted); min-width:70px; font-size:10px; }
+.ev-winner { font-weight:600; margin-left:auto; }
+.ev-winner.co  { color:var(--co); }
+.ev-winner.cl  { color:var(--cl); }
+.ev-winner.tie { color:var(--neutral); }
+
+/* ── Controls ── */
+#controls {
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  padding:7px 14px; background:#0d1117;
+  border-top:1px solid var(--border); font-size:11px; color:var(--muted);
+}
+.sep { width:1px; height:18px; background:var(--border); }
+</style>
+</head>
+<body>
+
+<!-- ════════ STATUS BAR ════════ -->
+<div id="status-bar">
+  <div id="ws-dot" class="connecting"></div>
+  <span id="ws-txt">Connecting to ws://localhost:8765…</span>
+  <span id="feed-badge" style="color:#f0c040;font-weight:600">CONNECTING</span>
+  <span style="margin-left:auto" id="tick-ctr">0 ticks</span>
+  <span id="session-clock">00:00:00</span>
+</div>
+
+<!-- ════════ MAIN GRID ════════ -->
+<div class="grid">
+
+  <!-- Panel 1 — Leading Leg -->
+  <div class="panel" id="p-leading">
+    <div class="ptitle">Leading Leg — Last N Events</div>
+    <div style="display:flex;gap:28px;align-items:flex-start;flex-wrap:wrap">
+      <div style="flex:0 0 auto;min-width:170px">
+        <div class="leader-name neutral" id="leader-name">Neutral</div>
+        <div class="win-rate mild" id="win-rate">—</div>
+        <div class="count-line" id="count-line">No scored events yet</div>
+      </div>
+      <div style="flex:1;min-width:220px">
+        <div class="pip-strip" id="pip-strip"></div>
+        <div class="tow">
+          <div class="tow-co" id="tow-n-co" style="width:50%"></div>
+          <div class="tow-cl" id="tow-n-cl" style="width:50%"></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:6px">
+          <label>Window:</label>
+          <select id="win-sel" onchange="changeWindow(+this.value)">
+            <option value="10">10</option>
+            <option value="15">15</option>
+            <option value="25" selected>25</option>
+            <option value="40">40</option>
+            <option value="50">50</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel 2 — Scoreboard -->
+  <div class="panel">
+    <div class="ptitle">Session Scoreboard</div>
+    <div class="score-row">
+      <div class="score-block">
+        <div class="score-num co" id="sc-co">0</div>
+        <div class="score-lbl" id="lbl-co">Brent</div>
+        <div class="score-bd">
+          <span class="lc" id="sc-co-l">L:0</span>
+          <span class="sc" id="sc-co-s">S:0</span>
+        </div>
+      </div>
+      <div class="vs">vs</div>
+      <div class="score-block">
+        <div class="score-num cl" id="sc-cl">0</div>
+        <div class="score-lbl" id="lbl-cl">Cl</div>
+        <div class="score-bd">
+          <span class="lc" id="sc-cl-l">L:0</span>
+          <span class="sc" id="sc-cl-s">S:0</span>
+        </div>
+      </div>
+    </div>
+    <div class="tow">
+      <div class="tow-co" id="tow-s-co" style="width:50%"></div>
+      <div class="tow-cl" id="tow-s-cl" style="width:50%"></div>
+    </div>
+    <div class="streak-row" id="streak-pips">
+      <span style="font-size:11px;color:var(--muted)">Streak:</span>
+    </div>
+    <div class="streak-txt" id="streak-txt">—</div>
+  </div>
+
+  <!-- Panel 3 — Sentiment -->
+  <div class="panel">
+    <div class="ptitle">Session Sentiment</div>
+    <div class="verdict neutral" id="verdict">Awaiting data…</div>
+    <div class="sent-detail" id="sent-detail"></div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:3px">Long-side leader</div>
+    <div id="long-ldr" style="font-size:12px;color:var(--neutral)">—</div>
+    <div style="font-size:11px;color:var(--muted);margin-top:8px;margin-bottom:3px">Short-side leader</div>
+    <div id="short-ldr" style="font-size:12px;color:var(--neutral)">—</div>
+  </div>
+
+  <!-- Panel 4 — Live Legs -->
+  <div class="panel" id="p-legs">
+    <div class="ptitle">Live Legs</div>
+    <div class="legs-grid">
+      <div class="leg-card co">
+        <div class="leg-name" id="leg-co-name">Brent Spread</div>
+        <div class="leg-id"  id="leg-co-id"></div>
+        <div class="leg-ltp co" id="ltp-co">—</div>
+        <div class="tick-row" id="ticks-co"></div>
+        <div class="vel-table">
+          <span class="vel-k">Long vel:</span>  <span class="vel-v none" id="vel-co-l">—</span>
+          <span class="vel-k">Short vel:</span> <span class="vel-v none" id="vel-co-s">—</span>
+        </div>
+      </div>
+      <div class="leg-card cl">
+        <div class="leg-name" id="leg-cl-name">Cl Spread</div>
+        <div class="leg-id"  id="leg-cl-id"></div>
+        <div class="leg-ltp cl" id="ltp-cl">—</div>
+        <div class="tick-row" id="ticks-cl"></div>
+        <div class="vel-table">
+          <span class="vel-k">Long vel:</span>  <span class="vel-v none" id="vel-cl-l">—</span>
+          <span class="vel-k">Short vel:</span> <span class="vel-v none" id="vel-cl-s">—</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel 5 — Chart -->
+  <div class="panel">
+    <div class="ptitle">Cumulative Score</div>
+    <div id="chart-wrap"><canvas id="score-chart"></canvas></div>
+  </div>
+
+  <!-- Panel 6 — Event log -->
+  <div class="panel">
+    <div class="ptitle">Event Log (last 12)</div>
+    <div id="ev-log"><div style="color:var(--muted);font-size:11px">Awaiting events…</div></div>
+  </div>
+
+</div>
+
+<!-- ════════ CONTROLS ════════ -->
+<div id="controls">
+  <label>Decay:</label>
+  <select id="decay-sel" onchange="DECAY_MS=+this.value;renderAll()">
+    <option value="60000">1 min</option>
+    <option value="300000" selected>5 min</option>
+    <option value="600000">10 min</option>
+    <option value="900000">15 min</option>
+    <option value="0">None</option>
+  </select>
+  <div class="sep"></div>
+  <button class="btn warn" onclick="resetSession()">Reset Session</button>
+  <button class="btn" id="btn-pause" onclick="togglePause()">Pause Feed</button>
+  <div class="sep"></div>
+  <span id="event-ctr" style="color:var(--muted)">0 scored events</span>
+</div>
+
+<script>
+"use strict";
+
+// ─────────────────────────────────────────────────────────────────
+//  WebSocket endpoint (must match backend/config.py WS_HOST/PORT)
+// ─────────────────────────────────────────────────────────────────
+const WS_URL = "ws://localhost:8765";
+
+// Label map — populated from the "config" message the backend sends
+// on connect. Fallback to these defaults if not yet received.
+const labels = { co: "Brent", cl: "Cl" };
+const ids    = { co: "", cl: "" };
+
+// ─────────────────────────────────────────────────────────────────
+//  Engine parameters
+// ─────────────────────────────────────────────────────────────────
+let WINDOW_SIZE  = 25;
+let DECAY_MS     = 300_000;
+let paused       = false;
+let tickCount    = 0;
+let scoredCount  = 0;
+let sessionStart = Date.now();
+
+// ─────────────────────────────────────────────────────────────────
+//  State
+// ─────────────────────────────────────────────────────────────────
+function makeLeg(key) {
+  return { key, ltp:null, prevLtp:null, ticks:[], seqStart:null,
+           longEvents:[], shortEvents:[], longFastest:Infinity, shortFastest:Infinity };
+}
+
+let co = makeLeg("co");
+let cl = makeLeg("cl");
+
+let session   = { co:0, cl:0, coLong:0, coShort:0, clLong:0, clShort:0, streak:[], history:[] };
+let allWinners = [];
+let window25   = [];
+let eventLog   = [];
+
+// ─────────────────────────────────────────────────────────────────
+//  Event engine
+// ─────────────────────────────────────────────────────────────────
+function processTick(leg, newLtp, ts) {
+  if (leg.ltp === null) { leg.ltp = newLtp; return null; }
+
+  const dir = newLtp > leg.ltp ? 1 : newLtp < leg.ltp ? -1 : 0;
+  leg.prevLtp = leg.ltp;
+  leg.ltp = newLtp;
+  if (dir === 0) return null;
+
+  if (leg.ticks.length > 0 && dir !== leg.ticks[leg.ticks.length - 1]) {
+    leg.ticks = []; leg.seqStart = null;
+  }
+  if (leg.ticks.length === 0) leg.seqStart = ts;
+  leg.ticks.push(dir);
+  if (leg.ticks.length > 3) leg.ticks.shift();
+
+  if (leg.ticks.length === 3 && leg.ticks.every(t => t === dir)) {
+    const type = dir === 1 ? 'long' : 'short';
+    const duration = ts - leg.seqStart;
+    const evArr = leg[type + 'Events'];
+    if (evArr.length > 0) {
+      const gap = ts - evArr[evArr.length - 1];
+      if (gap < leg[type + 'Fastest']) leg[type + 'Fastest'] = gap;
+    }
+    evArr.push(ts);
+    if (evArr.length > 500) evArr.shift();
+    leg.ticks = []; leg.seqStart = null;
+    return { leg: leg.key, type, duration, ts };
+  }
+  return null;
+}
+
+function effectiveFastest(events, now, decayMs) {
+  const relevant = decayMs > 0 ? events.filter(t => now - t <= decayMs) : events;
+  if (relevant.length < 2) return Infinity;
+  let best = Infinity;
+  for (let i = 1; i < relevant.length; i++) {
+    const g = relevant[i] - relevant[i - 1];
+    if (g < best) best = g;
+  }
+  return best;
+}
+
+function scoreEvent(event) {
+  const { type: side, ts } = event;
+  const coF = effectiveFastest(co[side + 'Events'], ts, DECAY_MS);
+  const clF = effectiveFastest(cl[side + 'Events'], ts, DECAY_MS);
+  if (coF === Infinity && clF === Infinity) return;
+
+  let winner;
+  if      (coF === Infinity) winner = 'cl';
+  else if (clF === Infinity) winner = 'co';
+  else if (coF < clF)        winner = 'co';
+  else if (clF < coF)        winner = 'cl';
+  else                       winner = 'tie';
+
+  session[winner]++;
+  if (winner !== 'tie') {
+    session[winner + side.charAt(0).toUpperCase() + side.slice(1)]++;
+  }
+  session.streak.push(winner);
+  if (session.streak.length > 8) session.streak.shift();
+
+  allWinners.push(winner);
+  window25 = allWinners.slice(-WINDOW_SIZE);
+
+  session.history.push({ ts, coTotal: session.co, clTotal: session.cl });
+  if (session.history.length > 200) session.history.shift();
+
+  eventLog.unshift({ ...event, winner, coF, clF });
+  if (eventLog.length > 12) eventLog.pop();
+
+  scoredCount++;
+  updateChart();
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Signals
+// ─────────────────────────────────────────────────────────────────
+function getLeader() {
+  const coN = window25.filter(x => x === 'co').length;
+  const clN = window25.filter(x => x === 'cl').length;
+  const tot = coN + clN;
+  const wr  = tot > 0 ? Math.max(coN, clN) / tot : 0;
+  const diff = coN - clN;
+  const leader = Math.abs(diff) <= 1 ? 'neutral' : diff > 0 ? 'co' : 'cl';
+  return { leader, coN, clN, wr, filled: window25.length };
+}
+
+function getSentiment() {
+  const tot = session.co + session.cl;
+  if (!tot) return { text:'Awaiting data…', cls:'neutral' };
+  const diff = session.co - session.cl;
+  const p = session.co / tot;
+  if (Math.abs(diff) <= 1) return { text:'Balanced — no directional edge', cls:'neutral' };
+  if (p >= 0.65) return { text:`${labels.co} dominant — bullish spread bias`, cls:'co' };
+  if (p <= 0.35) return { text:`${labels.cl} dominant — spread lagging ${labels.co}`, cls:'cl' };
+  if (p >  0.50) return { text:`Mild ${labels.co} bias — watch for confirmation`, cls:'co-mild' };
+  return           { text:`Mild ${labels.cl} bias — watch for confirmation`, cls:'cl-mild' };
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Render helpers
+// ─────────────────────────────────────────────────────────────────
+const flashTimers = {};
+function flashLtp(id, dir) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  clearTimeout(flashTimers[id]);
+  el.classList.remove('up','dn');
+  void el.offsetWidth;
+  el.classList.add(dir > 0 ? 'up' : 'dn');
+  flashTimers[id] = setTimeout(() => el.classList.remove('up','dn'), 420);
+}
+function fmtVel(ms) {
+  return !isFinite(ms) ? '—' : ms < 1000 ? ms.toFixed(0)+'ms' : (ms/1000).toFixed(1)+'s';
+}
+function velCls(ms) { return !isFinite(ms) ? 'none' : ms < 3000 ? 'fast' : 'slow'; }
+function fmtTs(ts)  { return new Date(ts).toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit',second:'2-digit'}); }
+
+// ─────────────────────────────────────────────────────────────────
+//  Render
+// ─────────────────────────────────────────────────────────────────
+function renderLeading() {
+  const { leader, coN, clN, wr, filled } = getLeader();
+  const el = document.getElementById('leader-name');
+  el.className = 'leader-name ' + (leader === 'neutral' ? 'neutral' : leader);
+  el.textContent = leader === 'co' ? labels.co + ' Leading'
+                 : leader === 'cl' ? labels.cl + ' Leading' : 'Neutral';
+
+  const wrEl = document.getElementById('win-rate');
+  wrEl.textContent = filled ? (wr * 100).toFixed(0)+'%' : '—';
+  wrEl.className = 'win-rate ' + (wr > 0.70 ? 'strong' : wr > 0.52 ? 'medium' : 'mild');
+
+  document.getElementById('count-line').textContent = filled
+    ? `${labels.co} ${coN} : ${labels.cl} ${clN}  of  ${filled} events  (window ${WINDOW_SIZE})`
+    : 'No scored events yet';
+
+  const strip = document.getElementById('pip-strip');
+  strip.innerHTML = '';
+  for (let i = 0; i < WINDOW_SIZE; i++) {
+    const d = document.createElement('div');
+    d.className = 'pip ' + (window25[i] || '');
+    strip.appendChild(d);
+  }
+
+  const tot = coN + clN;
+  const coPct = tot ? (coN / tot * 100) : 50;
+  document.getElementById('tow-n-co').style.width = coPct + '%';
+  document.getElementById('tow-n-cl').style.width = (100 - coPct) + '%';
+}
+
+function renderScoreboard() {
+  document.getElementById('sc-co').textContent   = session.co;
+  document.getElementById('sc-cl').textContent   = session.cl;
+  document.getElementById('sc-co-l').textContent = 'L:'+session.coLong;
+  document.getElementById('sc-co-s').textContent = 'S:'+session.coShort;
+  document.getElementById('sc-cl-l').textContent = 'L:'+session.clLong;
+  document.getElementById('sc-cl-s').textContent = 'S:'+session.clShort;
+
+  const tot = session.co + session.cl;
+  const coPct = tot ? (session.co / tot * 100) : 50;
+  document.getElementById('tow-s-co').style.width = coPct + '%';
+  document.getElementById('tow-s-cl').style.width = (100 - coPct) + '%';
+
+  document.getElementById('streak-pips').innerHTML =
+    `<span style="font-size:11px;color:var(--muted)">Streak:</span>` +
+    session.streak.map(s => `<div class="streak-pip ${s}"></div>`).join('');
+
+  let txt = '—';
+  if (session.streak.length) {
+    const last = session.streak[session.streak.length - 1];
+    let n = 0;
+    for (let i = session.streak.length - 1; i >= 0; i--) { if (session.streak[i] === last) n++; else break; }
+    const nm = last === 'co' ? labels.co : last === 'cl' ? labels.cl : 'Tie';
+    txt = n >= 2 ? `${nm} — ${n} in a row` : nm;
+  }
+  document.getElementById('streak-txt').textContent = txt;
+}
+
+function renderSentiment() {
+  const s = getSentiment();
+  const v = document.getElementById('verdict');
+  v.textContent = s.text;
+  v.className = 'verdict ' + s.cls;
+
+  const tot = session.co + session.cl;
+  document.getElementById('sent-detail').textContent = tot
+    ? `${labels.co} ${session.co} (${(session.co/tot*100).toFixed(0)}%)  ${labels.cl} ${session.cl} (${(session.cl/tot*100).toFixed(0)}%)  —  ${tot} total events`
+    : '';
+
+  const longLdrEl  = document.getElementById('long-ldr');
+  const shortLdrEl = document.getElementById('short-ldr');
+
+  const longLdr = session.coLong > session.clLong ? labels.co : session.clLong > session.coLong ? labels.cl : 'Even';
+  longLdrEl.textContent = `${longLdr}   (${labels.co} L:${session.coLong}  ${labels.cl} L:${session.clLong})`;
+  longLdrEl.style.color = session.coLong > session.clLong ? 'var(--co)' : session.clLong > session.coLong ? 'var(--cl)' : 'var(--neutral)';
+
+  const shortLdr = session.coShort > session.clShort ? labels.co : session.clShort > session.coShort ? labels.cl : 'Even';
+  shortLdrEl.textContent = `${shortLdr}   (${labels.co} S:${session.coShort}  ${labels.cl} S:${session.clShort})`;
+  shortLdrEl.style.color = session.coShort > session.clShort ? 'var(--co)' : session.clShort > session.coShort ? 'var(--cl)' : 'var(--neutral)';
+}
+
+function renderLegs() {
+  const now = Date.now();
+
+  function renderLeg(leg, ltpId, ticksId, velLId, velSId) {
+    if (leg.ltp !== null) {
+      const ltpEl = document.getElementById(ltpId);
+      ltpEl.textContent = leg.ltp.toFixed(2);
+      if (leg.prevLtp !== null && leg.ltp !== leg.prevLtp)
+        flashLtp(ltpId, leg.ltp > leg.prevLtp ? 1 : -1);
+    }
+    const tc = document.getElementById(ticksId);
+    tc.innerHTML = '';
+    for (let i = 0; i < 3; i++) {
+      const t = leg.ticks[i];
+      const p = document.createElement('div');
+      p.className = 't-pip' + (t === 1 ? ' up' : t === -1 ? ' dn' : '');
+      p.textContent = t === 1 ? '▲' : t === -1 ? '▼' : '';
+      tc.appendChild(p);
+    }
+    const lv = effectiveFastest(leg.longEvents,  now, DECAY_MS);
+    const sv = effectiveFastest(leg.shortEvents, now, DECAY_MS);
+    const lvEl = document.getElementById(velLId);
+    const svEl = document.getElementById(velSId);
+    lvEl.textContent = fmtVel(lv); lvEl.className = 'vel-v ' + velCls(lv);
+    svEl.textContent = fmtVel(sv); svEl.className = 'vel-v ' + velCls(sv);
+  }
+
+  renderLeg(co, 'ltp-co', 'ticks-co', 'vel-co-l', 'vel-co-s');
+  renderLeg(cl, 'ltp-cl', 'ticks-cl', 'vel-cl-l', 'vel-cl-s');
+}
+
+function renderEventLog() {
+  const c = document.getElementById('ev-log');
+  if (!eventLog.length) {
+    c.innerHTML = '<div style="color:var(--muted);font-size:11px">Awaiting events…</div>';
+    return;
+  }
+  c.innerHTML = eventLog.map(e => {
+    const legLbl   = e.leg === 'co' ? labels.co : labels.cl;
+    const badgeCls = `${e.leg === 'co' ? 'brent' : 'cl'}-${e.type}`;
+    const winLbl   = e.winner === 'co' ? labels.co : e.winner === 'cl' ? labels.cl : 'Tie';
+    return `<div class="ev-row">
+      <div class="ev-badge ${badgeCls}">${legLbl} ${e.type.toUpperCase()}</div>
+      <span class="ev-ts">${fmtTs(e.ts)}</span>
+      <span class="ev-dur">${e.duration.toFixed(0)}ms</span>
+      <span class="ev-vel">${fmtVel(e.coF)} / ${fmtVel(e.clF)}</span>
+      <span class="ev-winner ${e.winner}">→ ${winLbl}</span>
+    </div>`;
+  }).join('');
+}
+
+function renderCounters() {
+  document.getElementById('tick-ctr').textContent  = tickCount.toLocaleString()+' ticks';
+  document.getElementById('event-ctr').textContent = scoredCount+' scored events';
+}
+
+function renderAll() {
+  renderLeading(); renderScoreboard(); renderSentiment();
+  renderLegs(); renderEventLog(); renderCounters();
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Chart
+// ─────────────────────────────────────────────────────────────────
+let chart;
+function initChart() {
+  const ctx = document.getElementById('score-chart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: [],
+      datasets: [
+        { label:'Brent', data:[], borderColor:'#185FA5', backgroundColor:'rgba(24,95,165,.1)', borderWidth:2, pointRadius:0, tension:.1 },
+        { label:'Cl',    data:[], borderColor:'#BA7517', backgroundColor:'rgba(186,117,23,.1)', borderWidth:2, borderDash:[4,4], pointRadius:0, tension:.1 }
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false, animation:false,
+      plugins:{ legend:{ labels:{ color:'#666', font:{size:11}, boxWidth:20 } } },
+      scales:{
+        x:{ ticks:{color:'#444',maxTicksLimit:8}, grid:{color:'rgba(255,255,255,.04)'} },
+        y:{ ticks:{color:'#444'}, grid:{color:'rgba(255,255,255,.04)'}, beginAtZero:true }
+      }
+    }
+  });
+}
+function updateChart() {
+  if (!chart) return;
+  chart.data.labels           = session.history.map((_,i)=>i+1);
+  chart.data.datasets[0].data = session.history.map(h=>h.coTotal);
+  chart.data.datasets[1].data = session.history.map(h=>h.clTotal);
+  chart.update('none');
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Controls
+// ─────────────────────────────────────────────────────────────────
+function changeWindow(n) {
+  WINDOW_SIZE = n;
+  window25 = allWinners.slice(-WINDOW_SIZE);
+  renderAll();
+}
+
+function resetSession() {
+  const ltpCo = co.ltp, ltpCl = cl.ltp;
+  co = makeLeg("co"); cl = makeLeg("cl");
+  co.ltp = ltpCo; cl.ltp = ltpCl;
+  session = { co:0,cl:0,coLong:0,coShort:0,clLong:0,clShort:0,streak:[],history:[] };
+  allWinners=[]; window25=[]; eventLog=[];
+  scoredCount=0; sessionStart=Date.now();
+  updateChart(); renderAll();
+}
+
+function togglePause() {
+  paused = !paused;
+  const b = document.getElementById('btn-pause');
+  b.textContent = paused ? 'Resume Feed' : 'Pause Feed';
+  b.className   = paused ? 'btn active' : 'btn';
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  WebSocket connection
+// ─────────────────────────────────────────────────────────────────
+function setWsStatus(state, text) {
+  document.getElementById('ws-dot').className = state;
+  document.getElementById('ws-txt').textContent = text;
+  const badge = document.getElementById('feed-badge');
+  if (state === 'connected') {
+    badge.textContent = 'LIVE'; badge.style.color = 'var(--long)';
+  } else if (state === 'error') {
+    badge.textContent = 'DISCONNECTED'; badge.style.color = 'var(--short)';
+  } else {
+    badge.textContent = 'CONNECTING'; badge.style.color = '#f0c040';
+  }
+}
+
+let ws = null;
+let wsReconnectTimer = null;
+
+function connectWS() {
+  if (ws) { try { ws.close(); } catch(_){} }
+  setWsStatus('connecting', `Connecting to ${WS_URL}…`);
+
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    setWsStatus('connected', WS_URL);
+    clearTimeout(wsReconnectTimer);
+  };
+
+  ws.onmessage = (e) => {
+    let msg;
+    try { msg = JSON.parse(e.data); } catch(_) { return; }
+
+    if (msg.type === 'config') {
+      // Update labels and IDs from backend config
+      if (msg.instruments) {
+        for (const [key, val] of Object.entries(msg.instruments)) {
+          if (labels[key] !== undefined) {
+            labels[key] = val.label || labels[key];
+            ids[key]    = val.id    || ids[key];
+          }
+        }
+        // Push IDs into leg cards
+        document.getElementById('leg-co-id').textContent = ids.co;
+        document.getElementById('leg-cl-id').textContent = ids.cl;
+        document.getElementById('lbl-co').textContent    = labels.co;
+        document.getElementById('lbl-cl').textContent    = labels.cl;
+        // Update chart labels
+        if (chart) {
+          chart.data.datasets[0].label = labels.co;
+          chart.data.datasets[1].label = labels.cl;
+          chart.update('none');
+        }
+      }
+      return;
+    }
+
+    if (msg.type === 'status') {
+      const s = msg.ls_status || '';
+      if (s.startsWith('CONNECTED')) setWsStatus('connected', `${WS_URL}  ·  LS: ${s}`);
+      else if (s.startsWith('DISCONNECTED')) setWsStatus('error', `LS: ${s}`);
+      return;
+    }
+
+    if (msg.type === 'tick') {
+      if (paused) return;
+      const { leg: legKey, ltp, ts } = msg;
+      if (!legKey || isNaN(ltp)) return;
+
+      const leg = legKey === 'co' ? co : legKey === 'cl' ? cl : null;
+      if (!leg) return;
+
+      tickCount++;
+      const ev = processTick(leg, ltp, ts);
+      if (ev) scoreEvent(ev);
+      renderAll();
+    }
+  };
+
+  ws.onerror = () => setWsStatus('error', `Cannot reach ${WS_URL}`);
+
+  ws.onclose = () => {
+    setWsStatus('error', `Disconnected — retrying in 3s…`);
+    wsReconnectTimer = setTimeout(connectWS, 3000);
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────
+//  Init
+// ─────────────────────────────────────────────────────────────────
+initChart();
+renderAll();
+connectWS();
+
+setInterval(() => {
+  const ms = Date.now() - sessionStart;
+  const h  = String(Math.floor(ms / 3_600_000)).padStart(2,'0');
+  const m  = String(Math.floor((ms % 3_600_000) / 60_000)).padStart(2,'0');
+  const s  = String(Math.floor((ms % 60_000) / 1000)).padStart(2,'0');
+  document.getElementById('session-clock').textContent = `${h}:${m}:${s}`;
+}, 1000);
+</script>
+</body>
+</html>
